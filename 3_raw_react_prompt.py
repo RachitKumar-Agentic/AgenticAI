@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 import re
 import inspect
 load_dotenv()
+import json
 
 import ollama
 from langsmith import traceable
@@ -26,6 +27,7 @@ def apply_discount(price: float, discount_tier: str) -> float:
     """Apply a discount tier to a price and return the final price.
     Available tiers: bronze, silver, gold."""
     print(f"    >> Executing apply_discount(price={price}, discount_tier='{discount_tier}')")
+    price=float(price)
     discount_percentages = {"bronze": 5, "silver": 12, "gold": 23}
     discount = discount_percentages.get(discount_tier, 0)
     return round(price * (1 - discount / 100), 2)
@@ -98,43 +100,60 @@ def run_agent(question: str):
     print(f"Question: {question}")
     print("=" * 60)
 
-
+#"stop":["\n435436546Observation"],
     for iteration in range(1, MAX_ITERATIONS + 1):
         print(f"\n--- Iteration {iteration} ---")
         full_prompt = prompt + scratchpad
         # Difference 5: ollama.chat() directly instead of llm_with_tools.invoke()
         response = ollama_chat_traced(model=MODEL, 
             messages=[{"role":"user","content":full_prompt}],
-            options={"stop":["\n435436546Observation"],"temperature":0.0})
+            options={"stop":["\nObservation"],"temperature":0.0})
         output = response.message.content
         print(f"LLM Output:\n{output}")
         
 
+        print(f"[Parsing] Looking for Final Answer in LLM Output\n")
+        final_answer_match = re.search(r"Final Answer:\s(.+)",output)
+        if final_answer_match:
+            final_answer = final_answer_match.group(1).strip()
+            print("=" * 60)
+            print(f"\n\nFinal Answer : {final_answer}")
+            return final_answer
         # Process only the FIRST tool call — force one tool per iteration
-        tool_call = tool_calls[0]
-        # Difference 6: Attribute access (.function.name) instead of dict access (.get("name"))
-        tool_name = tool_call.function.name
-        tool_args = tool_call.function.arguments
+        print(f" [Parsing] Looking for Action and Action Input from the LLM Output")
+        action_match = re.search(r"Action:\s(.+)",output)
+        action_input_match = re.search(r"Action Input:\s(.+)",output)
+        if not action_match or not action_input_match:
+            print(" Parsing the Error could not parse Action/Action Input from the LLM Output")
+            break
+        
+        tool_name = action_match.group(1).strip()
+        tool_input_raw = action_input_match.group(1).strip()
 
-        print(f"  [Tool Selected] {tool_name} with args: {tool_args}")
+        
 
-        tool_to_use = tools_dict.get(tool_name)
-        if tool_to_use is None:
-            raise ValueError(f"Tool '{tool_name}' not found")
+        print(f"  [Tool Selected] {tool_name} with args: {tool_input_raw}")
+        
+        tool_input_raw=tool_input_raw.replace("'","").replace("{","").replace("}","").replace(":","=").strip()
+        print(tool_input_raw)
+        raw_args = [x.strip() for x in tool_input_raw.split(",")]
+        args=[x.split("=",1)[-1].strip().strip("'\"") for x in raw_args]
+        print(f"args after ={args}")
+        
+        if tool_name not in tools:
+            observation = f"Error: Tool '{tool_name}' not found : Available tools are {list[str](tools.keys())}"
+        else:
+            observation = str(tools[tool_name](*args))
+            
+            
+        
+        print(f"\b onbservation = {observation}")
+        scratchpad+=f"{output}\nObservation: {observation}\nThought:"
+        
+      
 
         # Difference 7: Direct function call instead of tool.invoke()
-        observation = tool_to_use(**tool_args)
-
-
-        print(f"  [Tool Result] {observation}")
-
-        messages.append(ai_message)
-        messages.append(
-            {
-                "role": "tool",
-                "content": str(observation),
-            }
-        )
+       
 
     print("ERROR: Max iterations reached without a final answer")
     return None

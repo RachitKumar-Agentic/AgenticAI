@@ -1,26 +1,48 @@
 from dotenv import load_dotenv
-
-load_dotenv()
+from ollama import chat
 from langchain.tools import tool
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langsmith import traceable
+import json
+
+MODEL = "qwen3:1.7b"
+message = ["Hi How are you?","I want to buy laptop with budget less than 30k","It should be good to carry"]
 
 @tool
-def get_product_price(product:str) -> float:
-    """ Get the product price """
-    print(f" > Executing get_product_price for {product}")
-    products={"laptop":189.67,"headphone":56.78,"keyboard":67.6}
-    return products.get(product,0)
+def get_product_price(product:str) -> str:
+    """ Look up the Price of a product in the catalog."""
+    return product
+def apply_discount(price:float,product:str)->float:
+    """" Apply a discount tier to a price and return the final price.
+    Available tiers : bronze, silver, gold"""
+    return 1.0
+
+tools = {
+    "get_product_price": get_product_price,
+    "apply_discount": apply_discount
+}
+
+#tool = tools["get_product_price"]("keyboard")
+tool = tools["get_product_price"].invoke("keyboard")
+print(tool)
+
+tool_name = '{"product":"laptop","product2":"key"}'
 
 
-@tool
-def discount_Tier(price:float,discount_tier:float) -> float:
-    """ Find discount if the product on discount Tier : bronze:1,silver:2, goldL3"""
 
-@traceable(name="Langsmith Aggent Hood")
-def run_agent(question:str):
-    pass
+tool_input_raw=tool_name.replace("'","").replace("{","").replace("}","").replace(":","=").strip()
+print(tool_input_raw)
+raw_args = [x.strip() for x in tool_input_raw.split(",")]
+args=[x.split("=",1)[-1].strip().strip("'\"") for x in raw_args]
+print(f"args after ={args}")
 
-if __name__ == "__main__":
-    print("Looping Under the hood agent")
-    result=run_agent("Get me laotop product with gold discount tier")
+print(tools)
+print(type(tools))
+# msgs=""
+# for msg in message:
+#     msgs=msgs + "\n" + msg 
+#     response = chat(model=MODEL,messages=[{"role":"user","content":msgs}])
+#     msgs = msgs + "\n" + response.message.content
+
+
+
+# print(f"\n Output : {msgs}")
+# print(f"\n done")
